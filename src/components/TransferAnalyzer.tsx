@@ -25,7 +25,7 @@ export default function TransferAnalyzer({ players, clubs }: Props) {
 
   const analysis =
     hasAnalyzed && selectedPlayer && selectedClub
-      ? analyzeTransfer(selectedPlayer, selectedClub)
+    ? analyzeTransfer(selectedPlayer, selectedClub, players)
       : null;
 
   function handleAnalyze() {
@@ -105,9 +105,10 @@ export default function TransferAnalyzer({ players, clubs }: Props) {
             </p>
 
             <div className="mt-4 space-y-1 text-sm text-gray-600">
-              <p>Age Fit: {analysis.ageFit}</p>
-              <p>Financial Compatibility: {analysis.financialCompatibility}</p>
-              <p>Potential: {analysis.potential}</p>
+             <p>Position Need: {analysis.positionNeed}</p>
+             <p>Age Fit: {analysis.ageFit}</p>
+             <p>Financial Compatibility: {analysis.financialCompatibility}</p>
+             <p>Potential: {analysis.potential}</p>
             </div>
 
             <div className="mt-6 text-sm text-gray-600">
