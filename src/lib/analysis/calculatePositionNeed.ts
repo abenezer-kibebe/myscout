@@ -1,25 +1,31 @@
-import type { Player } from "@/lib/loadPlayers";
-import type { Club } from "@/lib/loadClubs";
+// src/lib/analysis/calculatePositionNeed.ts
+import type { Player, Factor } from "@/lib/types";
 
+// Heuristic: how much does the club need another player in the target's line?
+// Fewer players already in that broad position => higher need.
+// IMPORTANT: clubSquad is already filtered to the selected club (the old code
+// filtered the whole dataset by position and ignored the club entirely).
 export function calculatePositionNeed(
   targetPlayer: Player,
-  selectedClub: Club,
-  allPlayers: Player[]
-): number {
-  const clubPlayers = allPlayers.filter(
-    (player) => player.current_club_id === selectedClub.club_id
-  );
+  clubSquad: Player[]
+): Factor {
+  const position = targetPlayer.position || "Unknown";
 
-  const sameRolePlayers = clubPlayers.filter(
-    (player) => player.sub_position === targetPlayer.sub_position
-  );
+  const depth = clubSquad.filter(
+    (p) => p.position === position && p.player_id !== targetPlayer.player_id
+  ).length;
 
-  const count = sameRolePlayers.length;
+  let score: number;
+  if (depth <= 1) score = 95;
+  else if (depth === 2) score = 80;
+  else if (depth === 3) score = 65;
+  else if (depth === 4) score = 50;
+  else score = 35;
 
-  if (count === 0) return 100;
-  if (count === 1) return 90;
-  if (count === 2) return 75;
-  if (count === 3) return 55;
-
-  return 35;
+  return {
+    score,
+    explanation:
+      `Club has ${depth} player(s) in the ${position} line. ` +
+      `Fewer players implies greater need (heuristic on squad depth).`,
+  };
 }
