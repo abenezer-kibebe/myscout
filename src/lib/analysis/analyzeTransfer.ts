@@ -22,7 +22,7 @@ export function analyzeTransfer(
   const playerValue = Number(player.market_value_in_eur || 0);
   const clubValue = Number(club.total_market_value || 0);
 
-  const positionNeed = calculatePositionNeed(player, allPlayers);
+  const positionNeed = calculatePositionNeed(player, club, allPlayers);
 
   const financialCompatibility =
     clubValue > 0 ? 100 - (playerValue / clubValue) * 100 : 50;

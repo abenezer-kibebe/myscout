@@ -1,16 +1,25 @@
 import type { Player } from "@/lib/loadPlayers";
+import type { Club } from "@/lib/loadClubs";
 
 export function calculatePositionNeed(
   targetPlayer: Player,
+  selectedClub: Club,
   allPlayers: Player[]
 ): number {
-  const samePositionPlayers = allPlayers.filter(
+  const clubPlayers = allPlayers.filter(
+    (player) => player.current_club_id === selectedClub.club_id
+  );
+
+  const sameRolePlayers = clubPlayers.filter(
     (player) => player.sub_position === targetPlayer.sub_position
   );
 
-  if (samePositionPlayers.length <= 2) return 95;
-  if (samePositionPlayers.length <= 4) return 80;
-  if (samePositionPlayers.length <= 6) return 65;
+  const count = sameRolePlayers.length;
 
-  return 45;
+  if (count === 0) return 100;
+  if (count === 1) return 90;
+  if (count === 2) return 75;
+  if (count === 3) return 55;
+
+  return 35;
 }
