@@ -1,13 +1,10 @@
 // src/lib/types.ts
-// Single source of truth for every shape shared across build script, loaders,
-// analysis engine, and UI.
-
 export type Role = "GK" | "CB" | "FB" | "DM" | "CM" | "AM" | "W" | "CF";
 
 export type FcAbility = {
   overall: number;
   potential: number;
-  attributes: Record<string, number>; // canonical keys, 0..99
+  attributes: Record<string, number>;
   positionRatings: Record<string, number> | null;
   preferredFoot: string | null;
   weakFoot: number | null;
@@ -17,33 +14,67 @@ export type FcAbility = {
 
 export type MatchConfidence = "high" | "medium" | "low" | "none";
 
+// Real performance (FBref, per season). null when unmatched. Basic-stats mirror:
+// output/availability/defensive-actions/discipline/keeper — NOT xG/progression.
+export type PlayerPerformance = {
+  season: string;
+  minutes: number;
+  matchesPlayed: number;
+  starts: number;
+  nineties: number;
+  pointsPerMatch: number | null;
+  goals: number;
+  assists: number;
+  nonPenGoals: number;
+  shots: number;
+  shotsOnTarget: number;
+  crosses: number;
+  interceptions: number;
+  tacklesWon: number;
+  fouls: number;
+  yellow: number;
+  red: number;
+  per90: {
+    goals: number;
+    assists: number;
+    nonPenGoals: number;
+    shots: number;
+    shotsOnTarget: number;
+    crosses: number;
+    interceptions: number;
+    tacklesWon: number;
+    fouls: number;
+  } | null; // null if < 450 minutes (too small a sample for rates)
+  keeper: {
+    goalsAgainstPer90: number | null;
+    savePct: number | null;
+    cleanSheetPct: number | null;
+    shotsOnTargetAgainst: number | null;
+  } | null;
+  matchConfidence: MatchConfidence;
+};
+
 export type MergedPlayer = {
-  // Identity (Transfermarkt)
   playerId: string;
   name: string;
   dateOfBirth: string | null;
   age: number | null;
   nationality: string;
-  // Club & role (Transfermarkt)
   clubId: string;
   clubName: string;
-  leagueId: string; // GB1 | ES1 | L1 | IT1 | FR1
+  leagueId: string;
   position: string;
   subPosition: string;
   role: Role;
-  // Financial (Transfermarkt)
   marketValue: number;
   highestMarketValue: number;
-  // Reliability (Transfermarkt appearances) — optional
   minutesLastSeason: number | null;
   appearancesLastSeason: number | null;
-  // Ability (FC 26) — null when unmatched
   fc: FcAbility | null;
   matchConfidence: MatchConfidence;
-  // A rating for EVERY player: FC overall when matched, else estimated from the
-  // market-value curve. ratingIsEstimated flags the fallback.
   displayRating: number | null;
   ratingIsEstimated: boolean;
+  performance: PlayerPerformance | null;
 };
 
 export type MergedClub = {
@@ -64,6 +95,51 @@ export type FactorResult = {
   confidence: Confidence;
 };
 
+// ---- Modular factor architecture (#18) ----
+// Every factor is a self-describing module: it owns its weight and returns the
+// raw numbers that drove its score (evidence), so the UI and future
+// positives/concerns view can explain "why", and scores are debuggable.
+export type FactorKey =
+  | "squadUpgrade"
+  | "teamNeed"
+  | "attributeFit"
+  | "developmentValue"
+  | "ageProfile"
+  | "overallQuality"
+  | "tactical";
+
+export type FactorComputation = {
+  score: number; // 0..100
+  confidence: Confidence;
+  explanation: string;
+  evidence: Record<string, unknown>; // loosely typed on purpose while modules evolve
+};
+
+export type FactorOutput = FactorComputation & {
+  key: FactorKey;
+  label: string;
+  weight: number; // weight now lives in the module, not the engine
+};
+
+export type FactorContext = {
+  player: MergedPlayer;
+  club: MergedClub;
+  squad: MergedPlayer[];
+  benchmark: ValueBenchmark;
+  leagueBaselines: LeagueBaselines;
+};
+
+// Per (role:styleDimension) distribution across the Top 5, built offline.
+export type Baseline = { mean: number; std: number; n: number };
+export type LeagueBaselines = Record<string, Baseline>;
+
+export type FactorModule = {
+  key: FactorKey;
+  label: string;
+  weight: number;
+  compute: (ctx: FactorContext) => FactorComputation;
+};
+
 export type FinancialBadge = {
   score: number;
   label: string;
@@ -76,12 +152,13 @@ export type AnalysisResult = {
   confidence: Confidence;
   confidenceNote: string;
   breakdown: {
-    squadUpgrade: FactorResult;
-    attributeFit: FactorResult;
-    developmentValue: FactorResult;
-    ageProfile: FactorResult;
-    overallQuality: FactorResult;
-    tactical: FactorResult;
+    squadUpgrade: FactorOutput;
+    teamNeed: FactorOutput;
+    attributeFit: FactorOutput;
+    developmentValue: FactorOutput;
+    ageProfile: FactorOutput;
+    overallQuality: FactorOutput;
+    tactical: FactorOutput;
   };
   financialValue: FinancialBadge;
   meta: {
@@ -98,7 +175,6 @@ export type AnalysisResult = {
   };
 };
 
-// Dropdown/search payloads (small).
 export type ClubOption = { id: string; name: string; leagueId: string };
 export type PlayerOption = {
   id: string;

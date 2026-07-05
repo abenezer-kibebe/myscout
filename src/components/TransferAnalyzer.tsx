@@ -6,7 +6,7 @@ import type {
   ClubOption,
   PlayerOption,
   AnalysisResult,
-  FactorResult,
+  FactorOutput,
   Confidence,
 } from "@/lib/types";
 import { runAnalysis } from "@/app/actions/analyzeTransfer";
@@ -19,14 +19,7 @@ const CONF_STYLE: Record<Confidence, string> = {
   low: "bg-gray-200 text-gray-700",
 };
 
-// Generic searchable item.
-type SearchItem = {
-  id: string;
-  primary: string; // main label
-  secondary?: string; // sub label (club, league)
-  meta?: string; // right-aligned (rating)
-  searchText: string; // lowercased haystack
-};
+type SearchItem = { id: string; primary: string; secondary?: string; meta?: string; searchText: string };
 
 function SearchSelect({
   label,
@@ -43,15 +36,12 @@ function SearchSelect({
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
-
   const selected = items.find((i) => i.id === value) ?? null;
-
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
     return items.filter((i) => i.searchText.includes(q)).slice(0, 40);
   }, [query, items]);
-
   const display = selected && !open ? selected.primary : query;
 
   return (
@@ -69,7 +59,7 @@ function SearchSelect({
         onChange={(e) => {
           setQuery(e.target.value);
           setOpen(true);
-          if (value) onSelect(""); // typing invalidates the current pick
+          if (value) onSelect("");
         }}
       />
       {open && results.length > 0 && (
@@ -88,17 +78,9 @@ function SearchSelect({
               >
                 <span className="min-w-0">
                   <span className="block truncate">{i.primary}</span>
-                  {i.secondary && (
-                    <span className="block truncate text-xs text-gray-500">
-                      {i.secondary}
-                    </span>
-                  )}
+                  {i.secondary && <span className="block truncate text-xs text-gray-500">{i.secondary}</span>}
                 </span>
-                {i.meta && (
-                  <span className="shrink-0 text-sm font-semibold text-gray-700">
-                    {i.meta}
-                  </span>
-                )}
+                {i.meta && <span className="shrink-0 text-sm font-semibold text-gray-700">{i.meta}</span>}
               </button>
             </li>
           ))}
@@ -116,16 +98,9 @@ export default function TransferAnalyzer({ clubs, players }: Props) {
   const [isPending, startTransition] = useTransition();
 
   const clubItems: SearchItem[] = useMemo(
-    () =>
-      clubs.map((c) => ({
-        id: c.id,
-        primary: c.name,
-        secondary: c.leagueId,
-        searchText: `${c.name} ${c.leagueId}`.toLowerCase(),
-      })),
+    () => clubs.map((c) => ({ id: c.id, primary: c.name, secondary: c.leagueId, searchText: `${c.name} ${c.leagueId}`.toLowerCase() })),
     [clubs]
   );
-
   const playerItems: SearchItem[] = useMemo(
     () =>
       players.map((p) => ({
@@ -148,7 +123,6 @@ export default function TransferAnalyzer({ clubs, players }: Props) {
     setResult(null);
     setError(null);
   }
-
   function handleAnalyze() {
     if (!clubId || !playerId) return;
     startTransition(async () => {
@@ -166,25 +140,10 @@ export default function TransferAnalyzer({ clubs, players }: Props) {
   return (
     <section className="mt-10 w-full max-w-2xl rounded-xl border p-6">
       <div className="grid gap-6">
-        <SearchSelect
-          label="Search Club"
-          placeholder="Type a club name…"
-          items={clubItems}
-          value={clubId}
-          onSelect={handleClubSelect}
-        />
-
-        <SearchSelect
-          label="Search Player"
-          placeholder="Type a player name…"
-          items={playerItems}
-          value={playerId}
-          onSelect={handlePlayerSelect}
-        />
-
+        <SearchSelect label="Search Club" placeholder="Type a club name…" items={clubItems} value={clubId} onSelect={handleClubSelect} />
+        <SearchSelect label="Search Player" placeholder="Type a player name…" items={playerItems} value={playerId} onSelect={handlePlayerSelect} />
         <p className="-mt-2 text-xs text-gray-400">
-          Ratings shown next to players; <span className="font-mono">*</span> means
-          estimated from market value (no FC 26 match).
+          Ratings shown next to players; <span className="font-mono">*</span> = estimated from market value.
         </p>
 
         <button
@@ -196,9 +155,7 @@ export default function TransferAnalyzer({ clubs, players }: Props) {
         </button>
 
         {!result && !error && !isPending && (
-          <p className="text-sm text-gray-500">
-            Search for a club and a player, then click Analyze Transfer.
-          </p>
+          <p className="text-sm text-gray-500">Search for a club and a player, then click Analyze Transfer.</p>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
 
@@ -207,12 +164,9 @@ export default function TransferAnalyzer({ clubs, players }: Props) {
             <h2 className="text-2xl font-bold">
               {result.meta.playerName} → {result.meta.clubName}
             </h2>
-
             <div className="mt-4 flex items-end gap-3">
               <p className="text-5xl font-bold">{result.suitability}%</p>
-              <span
-                className={`mb-2 rounded px-2 py-0.5 text-xs font-medium ${CONF_STYLE[result.confidence]}`}
-              >
+              <span className={`mb-2 rounded px-2 py-0.5 text-xs font-medium ${CONF_STYLE[result.confidence]}`}>
                 {result.confidence} confidence
               </span>
             </div>
@@ -220,18 +174,18 @@ export default function TransferAnalyzer({ clubs, players }: Props) {
 
             {result.meta.matchConfidence === "none" && (
               <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
-                No FC 26 ability match — rating is estimated and quality factors
-                are low confidence.
+                No FC 26 ability match — rating is estimated and quality factors are low confidence.
               </p>
             )}
 
             <div className="mt-6 space-y-4">
-              <FactorRow label="Squad Upgrade" weight="40%" f={result.breakdown.squadUpgrade} />
-              <FactorRow label="Attribute Fit" weight="22%" f={result.breakdown.attributeFit} />
-              <FactorRow label="Overall Quality" weight="15%" f={result.breakdown.overallQuality} />
-              <FactorRow label="Development Value" weight="13%" f={result.breakdown.developmentValue} />
-              <FactorRow label="Age Profile" weight="10%" f={result.breakdown.ageProfile} />
-              <FactorRow label="Tactical Fit" weight="0%" f={result.breakdown.tactical} muted />
+              <FactorRow label="Squad Upgrade" f={result.breakdown.squadUpgrade} />
+              <FactorRow label="Team Need" f={result.breakdown.teamNeed} highlight />
+              <FactorRow label="Attribute Fit" f={result.breakdown.attributeFit} />
+              <FactorRow label="Overall Quality" f={result.breakdown.overallQuality} />
+              <FactorRow label="Development Value" f={result.breakdown.developmentValue} />
+              <FactorRow label="Age Profile" f={result.breakdown.ageProfile} />
+              <FactorRow label="Tactical Fit" f={result.breakdown.tactical} muted />
             </div>
 
             <div className="mt-6 rounded-lg border bg-gray-50 p-4">
@@ -247,12 +201,9 @@ export default function TransferAnalyzer({ clubs, players }: Props) {
             <div className="mt-6 border-t pt-4 text-sm text-gray-600">
               <p>
                 Rating: {result.meta.playerRating ?? "NR"}
-                {result.meta.ratingEstimated ? " (estimated)" : ""}
+                {result.meta.ratingEstimated ? " (estimated)" : ""} · Role: {result.meta.role}
               </p>
-              <p>Role: {result.meta.role}</p>
-              <p>Player age: {result.meta.playerAge ?? "unknown"}</p>
-              <p>Player value: €{(result.meta.playerValue / 1e6).toFixed(1)}M</p>
-              <p>Minutes last season: {result.meta.playerMinutes ?? "unknown"}</p>
+              <p>Age: {result.meta.playerAge ?? "unknown"} · Value: €{(result.meta.playerValue / 1e6).toFixed(1)}M · Minutes: {result.meta.playerMinutes ?? "?"}</p>
               <p className="mt-2 text-xs text-gray-400">{result.confidenceNote}</p>
             </div>
           </div>
@@ -262,27 +213,16 @@ export default function TransferAnalyzer({ clubs, players }: Props) {
   );
 }
 
-function FactorRow({
-  label,
-  weight,
-  f,
-  muted = false,
-}: {
-  label: string;
-  weight: string;
-  f: FactorResult;
-  muted?: boolean;
-}) {
+function FactorRow({ label, f, muted = false, highlight = false }: { label: string; f: FactorOutput; muted?: boolean; highlight?: boolean }) {
+  const weightPct = `${Math.round(f.weight * 100)}%`;
   return (
-    <div className={muted ? "opacity-50" : ""}>
+    <div className={muted ? "opacity-50" : highlight ? "rounded-lg bg-blue-50 p-2" : ""}>
       <div className="flex items-center justify-between">
         <span className="font-medium">
-          {label} <span className="text-xs text-gray-400">· {weight}</span>
+          {label} <span className="text-xs text-gray-400">· {weightPct}</span>
         </span>
         <div className="flex items-center gap-2">
-          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CONF_STYLE[f.confidence]}`}>
-            {f.confidence}
-          </span>
+          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${CONF_STYLE[f.confidence]}`}>{f.confidence}</span>
           <span className="font-semibold">{f.score}</span>
         </div>
       </div>

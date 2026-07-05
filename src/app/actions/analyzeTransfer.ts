@@ -1,11 +1,10 @@
 // src/app/actions/analyzeTransfer.ts
 "use server";
-// Runs on the SERVER when Analyze is clicked. The client sends only two ids;
-// the merged dataset never travels to the browser.
 import {
   loadMergedPlayers,
   loadMergedClubs,
   loadValueBenchmark,
+  loadLeagueBaselines,
 } from "@/lib/data/loadMerged";
 import { analyzeTransfer } from "@/lib/analysis/analyzeTransfer";
 import type { AnalysisResult } from "@/lib/types";
@@ -17,6 +16,7 @@ export async function runAnalysis(
   const players = loadMergedPlayers();
   const clubs = loadMergedClubs();
   const benchmark = loadValueBenchmark();
+  const baselines = loadLeagueBaselines();
 
   const player = players.find((p) => p.playerId === playerId);
   const club = clubs.find((c) => c.clubId === clubId);
@@ -24,5 +24,5 @@ export async function runAnalysis(
   if (!club) return { error: "Club not found." };
 
   const squad = players.filter((p) => p.clubId === club.clubId);
-  return analyzeTransfer(player, club, squad, benchmark);
+  return analyzeTransfer(player, club, squad, benchmark, baselines);
 }

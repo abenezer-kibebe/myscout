@@ -34,12 +34,17 @@ import {
   lastToken,
 } from "../src/lib/matching/nameMatch";
 import { getAge, num, median } from "../src/lib/analysis/utils";
+import { buildPerfIndex, matchPerformance } from "../src/lib/fbref/performance";
+import { STYLE_KEYS, styleValue } from "../src/lib/analysis/styleDimensions";
+import type { LeagueBaselines } from "../src/lib/types";
 
 type Row = Record<string, string>;
 
 const DATA = path.join(process.cwd(), "data");
 const OUT = path.join(DATA, "merged");
 const FC_CSV = process.env.FC_CSV || "fc26.csv";
+const FBREF_CSV = process.env.FBREF_CSV || "players_data-2025_2026.csv";
+const SEASON = (FBREF_CSV.match(/(\d{4})[_-](\d{4})/)?.[0] ?? "2025-2026").replace("_", "-");
 const TOP5_TM = new Set(["GB1", "ES1", "L1", "IT1", "FR1"]);
 
 function fcLeagueId(leagueName: string | null): string | null {
@@ -304,14 +309,16 @@ async function main() {
 
   const playerRows = readCsv("players.csv");
   const maxSeason = playerRows.reduce((m, p) => Math.max(m, num(p.last_season)), 0);
-  const activeCutoff = maxSeason - 1;
 
   const players: MergedPlayer[] = [];
   for (const p of playerRows) {
     const club = clubById.get(p.current_club_id);
     if (!club) continue;
     if (!p.name) continue;
-    if (num(p.last_season) < activeCutoff) continue;
+    // Current-season only. last_season is a start-year; Transfermarkt keeps
+    // historical roster rows, so anything below maxSeason is a past/academy/
+    // departed entry, not the current squad.
+    if (num(p.last_season) < maxSeason) continue;
     players.push({
       playerId: p.player_id,
       name: p.name,
@@ -332,6 +339,7 @@ async function main() {
       matchConfidence: "none",
       displayRating: null,
       ratingIsEstimated: true,
+      performance: null,
     });
   }
   console.log(`• ${players.length} Top-5 active players (from ${playerRows.length} total)`);
@@ -392,10 +400,62 @@ async function main() {
     }
   }
 
+  // FBref performance layer (real output data) — optional but recommended.
+  let perfMatched = 0;
+  const fbrefPath = path.join(DATA, FBREF_CSV);
+  if (fs.existsSync(fbrefPath)) {
+    const perfIndex = buildPerfIndex(readCsv(FBREF_CSV));
+    for (const p of players) {
+      const year = p.dateOfBirth ? p.dateOfBirth.slice(0, 4) : null;
+      const perf = matchPerformance(normalizeName(p.name), year, p.leagueId, perfIndex, SEASON);
+      p.performance = perf;
+      if (perf) perfMatched++;
+    }
+    console.log(`• FBref performance (${SEASON}) matched: ${perfMatched}/${players.length}`);
+  } else {
+    console.log(`• ${FBREF_CSV} not found — skipping performance layer (optional).`);
+  }
+
+  // Squad prune: keep genuine current-squad members. A player stays if he
+  // played in 2025-26 FBref OR carries a real market value (>= €1M). This drops
+  // academy filler and loaned-out players whose last_season is still current.
+  const MIN_VALUE_IF_NO_PERF = 1_000_000;
+  const activePlayers = players.filter(
+    (p) => p.performance !== null || p.marketValue >= MIN_VALUE_IF_NO_PERF
+  );
+  const removed = players.length - activePlayers.length;
+
+  // Keep only clubs that actually have an active squad (clubs.csv contains
+  // teams that were in a Top-5 league in past seasons too).
+  const activeClubIds = new Set(activePlayers.map((p) => p.clubId));
+  const activeClubs = clubs.filter((c) => activeClubIds.has(c.clubId));
+
+  // League baselines: per (role:styleDimension) mean/std across the Top 5, so
+  // weakness detection is relative to real peers (built offline, read at runtime).
+  const buckets = new Map<string, number[]>();
+  for (const p of activePlayers) {
+    for (const k of STYLE_KEYS) {
+      const v = styleValue(p, k);
+      if (v !== null) {
+        const key = `${p.role}:${k}`;
+        const arr = buckets.get(key);
+        if (arr) arr.push(v);
+        else buckets.set(key, [v]);
+      }
+    }
+  }
+  const leagueBaselines: LeagueBaselines = {};
+  for (const [key, vals] of buckets) {
+    const mean = vals.reduce((s, x) => s + x, 0) / vals.length;
+    const std = Math.sqrt(vals.reduce((s, x) => s + (x - mean) ** 2, 0) / vals.length);
+    leagueBaselines[key] = { mean: +mean.toFixed(4), std: +std.toFixed(4), n: vals.length };
+  }
+
   fs.mkdirSync(OUT, { recursive: true });
-  fs.writeFileSync(path.join(OUT, "players.json"), JSON.stringify(players));
-  fs.writeFileSync(path.join(OUT, "clubs.json"), JSON.stringify(clubs));
+  fs.writeFileSync(path.join(OUT, "players.json"), JSON.stringify(activePlayers));
+  fs.writeFileSync(path.join(OUT, "clubs.json"), JSON.stringify(activeClubs));
   fs.writeFileSync(path.join(OUT, "valueBenchmark.json"), JSON.stringify(benchmark));
+  fs.writeFileSync(path.join(OUT, "leagueBaselines.json"), JSON.stringify(leagueBaselines));
 
   const matched = counts.high + counts.medium + counts.low;
   const rate = ((matched / players.length) * 100).toFixed(1);
@@ -406,6 +466,11 @@ async function main() {
   console.log(`  none:   ${counts.none}  (of these, ${estimated} got an estimated rating)`);
   console.log(`  match rate: ${rate}%`);
   console.log(`\nWrote merged data to ${OUT}`);
+  console.log(`League baselines computed: ${Object.keys(leagueBaselines).length} (role:dimension) cells`);
+  console.log(
+    `Final active squad players: ${activePlayers.length} ` +
+      `(pruned ${removed} academy/loan/no-value from ${players.length})`
+  );
   if (matched / players.length < 0.7) {
     console.log(
       "\n⚠ Still low. Confirm FC header names in src/lib/fc/columns.ts — especially " +

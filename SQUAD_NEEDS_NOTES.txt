@@ -1,0 +1,82 @@
+MyScout — Feature: Squad Needs + Weakness Detection + Team Need factor
+The first module that USES your FBref performance data. This DOES change scores
+(new factor + rebalanced weights) and REQUIRES a data rebuild.
+
+============================================================
+APPLY
+============================================================
+1. Overwrite / add these files (same paths):
+   NEW:
+     src/lib/analysis/styleDimensions.ts
+     src/lib/analysis/squadNeeds.ts
+     src/lib/analysis/factors/teamNeed.ts
+   CHANGED:
+     src/lib/types.ts
+     src/lib/analysis/analyzeTransfer.ts
+     src/lib/analysis/factors/index.ts
+     src/lib/analysis/factors/squadUpgrade.ts       (weight 0.40 -> 0.30)
+     src/lib/analysis/factors/attributeFit.ts        (0.22 -> 0.16)
+     src/lib/analysis/factors/overallQuality.ts      (0.15 -> 0.12)
+     src/lib/analysis/factors/developmentValue.ts    (0.13 -> 0.12)
+     src/lib/data/loadMerged.ts
+     src/app/actions/analyzeTransfer.ts
+     src/components/TransferAnalyzer.tsx
+     scripts/buildPlayerProfiles.ts
+   (ageProfile.ts / tactical.ts / financial.ts unchanged — included for a
+    consistent factors/ folder; safe to overwrite.)
+
+2. REBUILD (new leagueBaselines.json is generated):
+     npm run build:data
+   New log line: "League baselines computed: N (role:dimension) cells"
+
+3. npm run dev  -> analyze a transfer; you'll see a new "Team Need" row.
+
+============================================================
+WHAT IT DOES
+============================================================
+- Style dimensions per player: goal threat / chance creation / defensive actions
+  (REAL, from FBref) + ball progression / playmaking / aerial / pace (FC proxy,
+  labelled). Each dimension declares its source.
+- League baselines (built offline): per (role : dimension) mean+std across the
+  Top 5, so weakness is measured RELATIVE TO PEERS, not just within the club.
+- Weakness detection: a club's role-unit is flagged weak on a dimension when its
+  minutes-weighted average sits >= 0.5 std below the league mean for that role.
+- Team Need factor (weight 20%): scores how strongly the candidate rates on
+  exactly the dimensions where the club is weak in his role. "Does this player
+  solve THIS team's problem?"
+
+New weights (sum 1.0): Squad Upgrade 0.30 · Team Need 0.20 · Attribute Fit 0.16
+· Overall 0.12 · Development 0.12 · Age 0.10 · Tactical 0.00
+
+============================================================
+VERIFIED ON YOUR REAL FBREF DATA
+============================================================
+- Weakness detection: Man City's CF unit flags weak on "defensive actions"
+  (z=-0.53 vs the Top-5 CF baseline) — Haaland/Marmoush don't press like the
+  average league striker. Strong CB/CM/GK units correctly show no weaknesses.
+- Team Need differentiation (both signing into City):
+    Vitinha  (1.91 def actions/90) -> Team Need 87 ("addresses defensive actions")
+    Højlund  (0.03 def actions/90) -> Team Need 26 ("does not improve these areas")
+  Same club, same weakness, opposite verdicts — the point of the whole feature.
+- Full engine runs end-to-end with the new factor and rebalanced weights.
+- NOT run: `next build`. If TS flags anything, send it.
+
+============================================================
+CAVEATS
+============================================================
+- FC-proxy dimensions (progression/playmaking/aerial/pace) are attribute-derived,
+  medium confidence — Team Need marks confidence lower when a weakness relies on
+  them. Real progression/xA data needs an advanced FBref mirror (future).
+- Baseline needs >= 8 league players in a role:dimension to be trusted; thin
+  cells are skipped (no false weaknesses).
+- Weakness thresholds (WEAK_Z = -0.5) and Team Need weight (0.20) are tunable.
+
+============================================================
+NEXT
+============================================================
+Two natural directions, your pick:
+  (a) Show the club's weaknesses in the UI as a standalone panel (before you even
+      pick a player) — moves toward the "here's what this club needs" view.
+  (b) The recommendations engine: pick a club -> rank every eligible player by
+      suitability -> surface the best fits. This is the big one, and Team Need +
+      the modular registry are exactly what it needs.

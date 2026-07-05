@@ -1,29 +1,20 @@
 // src/lib/analysis/analyzeTransfer.ts
+// Engine. Runs every registered factor module, combines the weighted football
+// factors into suitability, aggregates confidence, and attaches the value badge.
+// Weights and per-factor logic now live in the modules (src/lib/analysis/factors).
 import type {
   MergedPlayer,
   MergedClub,
   ValueBenchmark,
+  LeagueBaselines,
   AnalysisResult,
-  FactorResult,
+  FactorContext,
+  FactorOutput,
+  FactorKey,
   Confidence,
 } from "@/lib/types";
-import { calculateSquadUpgrade } from "./calculateSquadUpgrade";
-import { calculateAttributeFit } from "./calculateAttributeFit";
-import { calculateDevelopmentValue } from "./calculateDevelopmentValue";
-import { calculateAgeProfile } from "./calculateAgeProfile";
-import { calculateOverallQuality } from "./calculateOverallQuality";
-import { calculateFinancialValue } from "./calculateFinancialValue";
-import { calculateTacticalCompatibility } from "./calculateTacticalCompatibility";
+import { FACTORS, computeFinancialValue } from "./factors";
 import { clamp, num } from "./utils";
-
-const WEIGHTS = {
-  squadUpgrade: 0.4,
-  attributeFit: 0.22,
-  overallQuality: 0.15,
-  developmentValue: 0.13,
-  ageProfile: 0.1,
-  tactical: 0.0,
-} as const;
 
 const CONF_VALUE: Record<Confidence, number> = { high: 1, medium: 0.6, low: 0.25 };
 
@@ -37,39 +28,31 @@ export function analyzeTransfer(
   player: MergedPlayer,
   club: MergedClub,
   squad: MergedPlayer[],
-  benchmark: ValueBenchmark
+  benchmark: ValueBenchmark,
+  leagueBaselines: LeagueBaselines
 ): AnalysisResult {
-  const squadUpgrade = calculateSquadUpgrade(player, squad);
-  const attributeFit = calculateAttributeFit(player);
-  const developmentValue = calculateDevelopmentValue(player);
-  const ageProfile = calculateAgeProfile(player, squad);
-  const overallQuality = calculateOverallQuality(player);
-  const tactical = calculateTacticalCompatibility(player, squad);
-  const financialValue = calculateFinancialValue(player, benchmark);
+  const ctx: FactorContext = { player, club, squad, benchmark, leagueBaselines };
 
-  const weighted: Array<[FactorResult, number]> = [
-    [squadUpgrade, WEIGHTS.squadUpgrade],
-    [attributeFit, WEIGHTS.attributeFit],
-    [overallQuality, WEIGHTS.overallQuality],
-    [developmentValue, WEIGHTS.developmentValue],
-    [ageProfile, WEIGHTS.ageProfile],
-    [tactical, WEIGHTS.tactical],
-  ];
+  const outputs: FactorOutput[] = FACTORS.map((m) => ({
+    key: m.key,
+    label: m.label,
+    weight: m.weight,
+    ...m.compute(ctx),
+  }));
+  const byKey = Object.fromEntries(outputs.map((o) => [o.key, o])) as Record<FactorKey, FactorOutput>;
 
-  const suitability = clamp(weighted.reduce((sum, [f, w]) => sum + f.score * w, 0));
+  const suitability = clamp(outputs.reduce((sum, o) => sum + o.score * o.weight, 0));
 
   let confAcc = 0;
   let confW = 0;
-  for (const [f, w] of weighted) {
-    if (w > 0) {
-      confAcc += CONF_VALUE[f.confidence] * w;
-      confW += w;
+  for (const o of outputs) {
+    if (o.weight > 0) {
+      confAcc += CONF_VALUE[o.confidence] * o.weight;
+      confW += o.weight;
     }
   }
   let confidence = labelConfidence(confW > 0 ? confAcc / confW : 0.25);
-  if (player.matchConfidence === "none" || player.matchConfidence === "low") {
-    confidence = "low";
-  }
+  if (player.matchConfidence === "none" || player.matchConfidence === "low") confidence = "low";
 
   const confidenceNote =
     player.fc === null
@@ -78,17 +61,20 @@ export function analyzeTransfer(
       ? "Strong data coverage across factors."
       : "Some factors rely on partial data; treat the score as indicative.";
 
+  const financialValue = computeFinancialValue(ctx);
+
   return {
     suitability,
     confidence,
     confidenceNote,
     breakdown: {
-      squadUpgrade,
-      attributeFit,
-      developmentValue,
-      ageProfile,
-      overallQuality,
-      tactical,
+      squadUpgrade: byKey.squadUpgrade,
+      teamNeed: byKey.teamNeed,
+      attributeFit: byKey.attributeFit,
+      developmentValue: byKey.developmentValue,
+      ageProfile: byKey.ageProfile,
+      overallQuality: byKey.overallQuality,
+      tactical: byKey.tactical,
     },
     financialValue,
     meta: {
