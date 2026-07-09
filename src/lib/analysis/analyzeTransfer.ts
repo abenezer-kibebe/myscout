@@ -15,6 +15,7 @@ import type {
 } from "@/lib/types";
 import { FACTORS, computeFinancialValue } from "./factors";
 import { styleProfile } from "@/lib/pl/quality";
+import { posCode } from "@/lib/positions";
 import { clamp, num } from "./utils";
 
 const CONF_VALUE: Record<Confidence, number> = { high: 1, medium: 0.6, low: 0.25 };
@@ -101,6 +102,7 @@ export function analyzeTransfer(
       clubName: club.name,
       clubLeagueId: club.leagueId,
       matchConfidence: player.matchConfidence,
+      playerPosCode: posCode(player.subPosition, player.role),
     },
   };
 }

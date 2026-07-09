@@ -36,7 +36,9 @@ function norm(raw: string): string {
 export function plClubKey(raw: string): PlClubKey | null {
   const n = norm(raw);
   if (!n) return null;
-  const has = (...ts: string[]) => ts.some((t) => n.includes(t));
+  const words = new Set(n.split(" ").filter(Boolean));
+  // whole-word match for single tokens; substring only for multi-word targets
+  const has = (...ts: string[]) => ts.some((t) => (t.includes(" ") ? n.includes(t) : words.has(t)));
 
   if (has("manchester", "man")) {
     if (has("city")) return "man_city";
@@ -55,10 +57,10 @@ export function plClubKey(raw: string): PlClubKey | null {
   if (has("leeds")) return "leeds";
   if (has("liverpool")) return "liverpool";
   if (has("newcastle")) return "newcastle";
-  if (has("nott")) return "nottingham_forest"; // "nott'ham" / "nottingham"
+  if (has("nott", "nottingham")) return "nottingham_forest";
   if (has("sunderland")) return "sunderland";
   if (has("tottenham", "spurs")) return "tottenham";
   if (has("west ham")) return "west_ham";
-  if (has("wolv", "wolves")) return "wolves"; // "wolves" / "wolverhampton"
+  if (has("wolves", "wolverhampton")) return "wolves";
   return null;
 }

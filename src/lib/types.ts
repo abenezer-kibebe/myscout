@@ -257,16 +257,22 @@ export type AnalysisResult = {
     playerMinutes: number | null;
     clubName: string;
     clubLeagueId: string;
+    clubLogoUrl?: string | null;
+    playerPosCode?: string;
     matchConfidence: MatchConfidence;
+    playerPosCode: string;
   };
 };
 
-export type ClubOption = { id: string; name: string; leagueId: string };
+export type ClubOption = {
+  logoUrl?: string | null; id: string; name: string; leagueId: string };
 export type PlayerOption = {
+  pos?: string;
   id: string;
   name: string;
   role: Role;
   clubName: string;
   rating: number | null;
   estimated: boolean;
+  pos: string; // short position code (LW, CB, ST...)
 };

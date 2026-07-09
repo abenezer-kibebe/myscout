@@ -8,6 +8,8 @@ import {
 } from "@/lib/data/loadMerged";
 import { analyzeTransfer } from "@/lib/analysis/analyzeTransfer";
 import { computeFeasibility } from "@/lib/feasibility/estimate";
+import { logoUrlFor } from "@/lib/logos";
+import { posCode } from "@/lib/positions";
 import type { AnalysisResult } from "@/lib/types";
 
 export async function runAnalysis(
@@ -33,5 +35,7 @@ export async function runAnalysis(
   result.feasibility = computeFeasibility(player, club, sellingClub);
   // POTENTIAL = 60% suitability + 40% feasibility (how good a fit x how gettable).
   result.potential = Math.round(0.6 * result.suitability + 0.4 * result.feasibility.score);
+  result.meta.clubLogoUrl = logoUrlFor(club.name);
+  result.meta.playerPosCode = posCode(player.subPosition, player.role);
   return result;
 }
